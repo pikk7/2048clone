@@ -13,19 +13,35 @@ function setupInput() {
   window.addEventListener("keydown", handleInput, { once: true });
 }
 
-function handleInput(event) {
+async function handleInput(event) {
   switch (event.key) {
     case "ArrowUp":
-      moveUp();
+      if (!canMoveUp()) {
+        setupInput();
+        return;
+      }
+      await moveUp();
       break;
     case "ArrowDown":
-      moveDown();
+      if (!canMoveDown()) {
+        setupInput();
+        return;
+      }
+      await moveDown();
       break;
     case "ArrowLeft":
-      moveLeft();
+      if (!canMoveLeft()) {
+        setupInput();
+        return;
+      }
+      await moveLeft();
       break;
     case "ArrowRight":
-      moveRight();
+      if (!canMoveRight()) {
+        setupInput();
+        return;
+      }
+      await moveRight();
       break;
     default:
       setupInput();
@@ -33,7 +49,13 @@ function handleInput(event) {
   }
 
   grid.cells.forEach((cell) => cell.mergeTiles());
+  const newTile = new Tile(gameBoard);
+  grid.randomEmptyCell().tile = newTile;
 
+  if (isOver()) {
+    newTile.waitForTransition(true).then(() => alert("You lose"));
+    return;
+  }
   setupInput();
 }
 
@@ -54,29 +76,69 @@ function moveRight() {
 }
 
 function slideTiles(cells) {
-  cells.forEach((group) => {
-    for (let i = 1; i < group.length; i++) {
-      const cell = group[i];
-      if (cell.tile == null) {
-        continue;
-      }
-      let lastValidCell;
-      for (let j = i - 1; j >= 0; j--) {
-        const moveToCell = group[j];
-        if (!moveToCell.canAccept(cell.tile)) {
-          break;
+  return Promise.all(
+    cells.flatMap((group) => {
+      const promises = [];
+      for (let i = 1; i < group.length; i++) {
+        const cell = group[i];
+        if (cell.tile == null) {
+          continue;
         }
+        let lastValidCell;
+        for (let j = i - 1; j >= 0; j--) {
+          const moveToCell = group[j];
+          if (!moveToCell.canAccept(cell.tile)) {
+            break;
+          }
 
-        lastValidCell = moveToCell;
-      }
-      if (lastValidCell != null) {
-        if (lastValidCell.tile != null) {
-          lastValidCell.mergeTile = cell.tile;
-        } else {
-          lastValidCell.tile = cell.tile;
+          lastValidCell = moveToCell;
         }
-        cell.tile = null;
+        if (lastValidCell != null) {
+          promises.push(cell.tile.waitForTransition());
+          if (lastValidCell.tile != null) {
+            lastValidCell.mergeTile = cell.tile;
+          } else {
+            lastValidCell.tile = cell.tile;
+          }
+          cell.tile = null;
+        }
       }
-    }
+      return promises;
+    })
+  );
+}
+
+function canMoveUp() {
+  return canMove(grid.cellsByColumn);
+}
+
+function canMoveDown() {
+  return canMove(grid.cellsByColumn.map((column) => [...column].reverse()));
+}
+
+function canMoveLeft() {
+  return canMove(grid.cellsByRow);
+}
+
+function canMoveRight() {
+  return canMove(grid.cellsByRow.map((row) => [...row].reverse()));
+}
+
+function canMove(cells) {
+  return cells.some((group) => {
+    return group.some((cell, index) => {
+      if (index == 0) {
+        return false;
+      }
+      if (cell.tile == null) {
+        return false;
+      }
+      const moveToCell = group[index - 1];
+      return moveToCell.canAccept(cell.tile);
+    });
   });
+}
+
+function isOver() {
+  return !canMoveUp() && !canMoveDown() && !canMoveRight() && !canMoveLeft();
 }
